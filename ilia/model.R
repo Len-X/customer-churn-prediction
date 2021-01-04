@@ -94,7 +94,7 @@ churn_cv  <- vfold_cv(churn_train, strata=churn, v=10)
 
     test_predictions %>% 
         ggplot() +
-        geom_density(aes(x = .pred_class, fill = churn), alpha=0.5)
+        geom_density(aes(x = .pred_True, fill = churn), alpha=0.5)
 
 
 
