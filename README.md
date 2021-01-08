@@ -1,2 +1,2 @@
-# machine-learning-2
-Machine Learning Customer Churn Prediction Project
+# Customer Churn Prediction
+Machine Learning Customer Churn Prediction with Random Forest and SVM
