@@ -184,16 +184,57 @@ narrow_df  %>% glimpse() # now we have only 9 variables.
 
 
 # 4. Explanatory Data Analysis =================================================
+# To find out if there is a skewness we will draw density plots target variable
+# against every predictor variable
+
+{ # To automate work we will create two functions
+  # draw_dist for continuous variables 
+  # draw_hist for discrete variables
+
+    draw_dist <- function(tdf){
+        p = tdf %>% 
+            ggplot(aes(variable, fill=churn)) +
+            geom_density(alpha=.3) +
+            theme_bw() + 
+            ggtitle("Variable density") +
+            theme(plot.title = element_text(size = 20, hjust = 0.5))
+    }
+}
+
+{ # Draw continuous variables
+    gchurn = df$churn
+    continuous_df = df %>% select(-churn, -international.plan, - voice.mail.plan)
+
+    continuous_plots = continuous_df %>% 
+        map(function(x) draw_dist(data.frame(variable=x, churn=gchurn)))
+
+    for(name in names(continuous_df)){
+        print(continuous_plots[[name]] + labs(title = paste("Density of ", gsub("\\.", " ", name))))
+        plot_name = gsub("\\.", "_", name) 
+        plot_name = glue::glue("pics/", plot_name, ".svg")
+
+        if(tosave) ggsave(plot_name)
+    }
+}
+
+continuous_plots  %>% str(max.level=1)
+
+fb[1]
+
+df %>% glimpse()
 
 df %>% 
-    group_by(state) %>% 
-    summarise(n       = n(),
-              n_churn = sum(churn == "True"),
-              .groups = "drop") %>% 
-    ungroup() %>% 
+    ggplot(aes(total.day.minutes, fill=churn)) +
+    geom_density(alpha=.3) +
+    theme_bw() + 
+    ggtitle("total.day.minutes density") +
+    theme(plot.title = element_text(size = 20, hjust = 0.5))
 
-    mutate(churn.prop = round(n_churn/n, 3)) %>% 
-    arrange(desc(churn.prop))
-
-
-round(1234.2222, 2)
+df %>% 
+    ggplot(aes(voice.mail.plan, fill=churn)) +
+    geom_histogram(stat="count", position="dodge", alpha=0.8) + 
+    scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                  labels = trans_format("log10", math_format(10^.x))) +
+    theme_bw() + 
+    ggtitle("voice.mail.plan histogram") +
+    theme(plot.title = element_text(size = 20, hjust = 0.5))
