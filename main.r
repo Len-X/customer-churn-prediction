@@ -182,6 +182,7 @@ narrow_df  %>% glimpse() # now we have only 9 variables.
                          # minutes and charge variables had a high
                          # correlation, so they are were removed.
 
+wide_df = df
 
 # 4. Explanatory Data Analysis =================================================
 # To find out if there is a skewness we will draw density plots target variable
@@ -245,3 +246,137 @@ narrow_df  %>% glimpse() # now we have only 9 variables.
     }
 }
 
+# 5. Model building ============================================================
+# As were said to split the data set into (60/20/20=training/validation/testing)
+# Testing set has been already split, then we need to split our data frame into
+# Training and Validation. 60% of original data frame corresponds to 75 % of
+# out narrow_df or wide_df data frame. (0.8 * 0.75 = 0.6)
+
+
+
+{ # Narrow Models --------------------------------------------------------------
+    set.seed(5)
+    churn_split = initial_split(narrow_df, prop=0.75)
+    churn_train = training(churn_split)
+    churn_valid = testing (churn_split)
+
+    churn_cv  <- vfold_cv(churn_train, strata=churn, v=10)
+
+    { # define recipe and a random forest model, and tune the model
+        rf_recipe <- narrow_df %>% 
+            recipe(churn ~ .)
+
+        rf_model <- rand_forest() %>% 
+            # the number of trees will be tuned from 125 to 1855
+            # the number of variable will be tuned from 1 to 8
+            # we expect that the best mtry will be 2 or 3
+            set_args(mtry = tune(), trees = tune()) %>% 
+            set_engine("ranger", importance = "impurity") %>% 
+            set_mode("classification")
+
+        rf_workflow <- workflow() %>% 
+            add_recipe(rf_recipe) %>% 
+            add_model(rf_model)
+
+        ctrl <- control_grid(verbose = TRUE, save_pred = TRUE)
+
+        rf_tune_results <- rf_workflow %>% 
+            tune_grid(resamples = churn_cv,
+                      metrics   = metric_set(accuracy, recall, roc_auc),
+                      control   = ctrl
+            )
+
+    }
+
+
+            rf_tune_results %>% 
+            collect_metrics()  %>% 
+            .$trees
+    { # plot the penalty plot
+        rf_plot_trees  <- 
+            rf_tune_results %>% 
+            collect_metrics() %>% 
+            ggplot(aes(x = trees, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            theme_bw() +
+            ggtitle("Narrow Random Forest penalty plot") +
+            theme(plot.title = element_text(size = 20, hjust = 0.5))
+
+        rf_plot_mtry  <- 
+            rf_tune_results %>% 
+            collect_metrics() %>% 
+            ggplot(aes(x = mtry, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            theme_bw()
+
+        p = gridExtra::grid.arrange(rf_plot_trees, rf_plot_mtry, nrow = 2) 
+        p # just to show the plot
+        if(tosave) ggsave("pics/narrow_random_forest_penalty_plot.svg", plot=p)
+
+    }
+    # On the plot you can see that the model is overfitted because 
+    # recall equals to 1 when number of trees equals to 1517 or
+    # mtry = 1. So we will choose our hyperparameter by ROC AUC.
+
+    { # choosing the best parameter and building the final model
+        param_final  <- rf_tune_results %>% 
+            select_best(metric = "roc_auc")
+
+        rf_fit  <- rf_workflow %>% 
+            finalize_workflow(param_final) %>% 
+            last_fit(churn_split)
+
+    }
+
+    { # ROC and AUC
+
+        { # calculate AUC
+            roc_obj = rf_fit %>% 
+                collect_predictions() %>% 
+                pROC::roc(churn, .pred_True)
+            auc_metric = pROC::auc(roc_obj)[[1]]
+
+
+        }
+
+        { # draw ROC
+            rf_auc <- rf_fit %>% collect_predictions() %>% 
+                roc_curve(churn, .pred_False) %>% 
+                mutate(model = "Random Forest")
+
+            rf_roc_plot <- autoplot(rf_auc) + 
+                ggtitle(paste0(c("Narrow Random Forest: AUC", round(auc_metric, 3)), collapse=" ")) + 
+                theme(plot.title = element_text(size = 20, hjust = 0.5))
+
+            rf_roc_plot
+            if(tosave) ggsave("pics/narrow_random_forest_roc_plot.svg", plot=rf_roc_plot)
+        }
+
+    }
+
+    { # Validation of Narrowed Random Forest
+
+        test_performance <- rf_fit %>% 
+            collect_metrics(); test_performance
+
+        test_predictions <- rf_fit %>% 
+            collect_predictions(); test_predictions
+
+        test_predictions %>% conf_mat(truth = churn, estimate = .pred_class)
+
+        test_predictions %>% 
+            ggplot() +
+            geom_density(aes(x = .pred_True, fill = churn), alpha=0.5) +
+            theme_bw()
+
+        treatment_fit <- fit(rf_workflow, data=churn_valid)
+
+        predicted = predict(treatment_fit, df_test)
+        accuracy = sum(df_test$treatment == predicted)/nrow(predicted)
+        accuracy
+    }
+}
