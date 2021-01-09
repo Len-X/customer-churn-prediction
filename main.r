@@ -16,6 +16,7 @@ tosave = TRUE # if you want to save all your plots in `pics` folder
     library(ggplot2)
     library(gridExtra)
     library(Boruta)
+    library(ggcorrplot)
 
     df = read.csv(here::here("data/churn-bigml-80.csv")) %>% 
         # make all feature names in lower case
@@ -66,6 +67,7 @@ df %>% summarise_all(~sum(is.na(.))) # missingness per feature: no missingness
   # significant. Besides, you can adjust the strictness of the algorithm by 
   # adjusting the p values that defaults to 0.01 and the maxRuns.
 
+    set.seed(3)
     boruta.df <- Boruta(churn ~ ., data=df, doTrace=2, maxRuns=50)
     print(boruta.df)
 
@@ -137,6 +139,49 @@ df %>% summarise_all(~sum(is.na(.))) # missingness per feature: no missingness
     df %>% glimpse()
 
 }
+
+{ # Draw correlation matrix
+
+    model.matrix(~0+., data=df) %>% 
+      cor(use="pairwise.complete.obs") %>% 
+      ggcorrplot(show.diag = F, type="full", 
+                 lab=FALSE, lab_size=1, tl.cex=10, tl.srt=45,
+      ) +
+    ggtitle("Correlation Matrix") +
+    theme(plot.title = element_text(size = 20, hjust = 0.5))
+    if(tosave)ggsave("pics/correlation_matrix.svg")
+
+}
+
+df %>% glimpse()
+
+{ # Remove highly correlated features 
+  # Here we use package recipe becaue in the future it could be 
+  # used as a part of model's recipe.
+
+    df = df %>% mutate(churn = as.character(churn)) 
+
+    # I am still thinking about replacing dots with underscore
+#     names(tdf) <- gsub("\\.", "_", names(tdf)) 
+
+    correlation_recipe = df  %>% 
+        recipe(churn ~ .) %>% 
+        # transforming categorical variables to numbers
+        step_dummy(c(international.plan, voice.mail.plan), one_hot=T) %>% 
+        # removing predictor variables with correlation more than 0.9
+        step_corr(threshold=0.9, all_predictors()) 
+
+    narrow_df = correlation_recipe %>% 
+        prep() %>% 
+        juice()
+
+
+}
+
+narrow_df  %>% glimpse() # now we have only 9 variables.
+                         # minutes and charge variables had a high
+                         # correlation, so they are were removed.
+
 
 # 4. Explanatory Data Analysis =================================================
 
