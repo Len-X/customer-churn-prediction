@@ -252,18 +252,22 @@ wide_df = df
 # Training and Validation. 60% of original data frame corresponds to 75 % of
 # out narrow_df or wide_df data frame. (0.8 * 0.75 = 0.6)
 
-
-
-{ # Narrow Models --------------------------------------------------------------
-    set.seed(5)
-    churn_split = initial_split(narrow_df, prop=0.75)
-    churn_train = training(churn_split)
-    churn_valid = testing (churn_split)
-
-    churn_cv  <- vfold_cv(churn_train, strata=churn, v=10)
-
+RandomForest <- function(df         ,
+                         churn_split, 
+                         churn_train, 
+                         churn_valid, 
+                         churn_cv   , 
+                         forest_name){
+    ### LOCAL TESTING
+    # df          = wide_df
+    # churn_split = wide_churn_split
+    # churn_train = wide_churn_train
+    # churn_valid = wide_churn_valid
+    # churn_cv    = wide_churn_cv
+    # forest_name = "wide"
+    ### LOCAL TESTING
     { # define recipe and a random forest model, and tune the model
-        rf_recipe <- narrow_df %>% 
+        rf_recipe <- df %>% 
             recipe(churn ~ .)
 
         rf_model <- rand_forest() %>% 
@@ -289,6 +293,9 @@ wide_df = df
     }
 
     { # plot the penalty plot
+        plot_title = paste(str_to_title(forest_name),
+                           "Random Forest penalty plot", 
+                           collapse=" ")
         rf_plot_trees  <- 
             rf_tune_results %>% 
             collect_metrics() %>% 
@@ -297,7 +304,7 @@ wide_df = df
             geom_line() +
             facet_wrap(~.metric) +
             theme_bw() +
-            ggtitle("Narrow Random Forest penalty plot") +
+            ggtitle(plot_title) +
             theme(plot.title = element_text(size = 20, hjust = 0.5))
 
         rf_plot_mtry  <- 
@@ -309,9 +316,10 @@ wide_df = df
             facet_wrap(~.metric) +
             theme_bw()
 
-        p = gridExtra::grid.arrange(rf_plot_trees, rf_plot_mtry, nrow = 2) 
-        p # just to show the plot
-        if(tosave) ggsave("pics/narrow_random_forest_penalty_plot.svg", plot=p)
+        rf_penalty_plot = gridExtra::grid.arrange(rf_plot_trees, rf_plot_mtry, nrow = 2) 
+        rf_penalty_plot # just to show the plot
+        plot_path = glue::glue("pics/", forest_name ,"_random_forest_penalty_plot.svg")
+        if(tosave) ggsave(plot_path, plot=rf_penalty_plot)
 
     }
     # On the plot you can see that the model is overfitted because 
@@ -326,7 +334,7 @@ wide_df = df
             finalize_workflow(param_final) %>% 
             last_fit(churn_split)
 
-        rf_fit$.workflow # hyperparameter of the chosen model
+        print(rf_fit$.workflow) # hyperparameters of the chosen model
 
     }
 
@@ -345,12 +353,20 @@ wide_df = df
                 roc_curve(churn, .pred_False) %>% 
                 mutate(model = "Random Forest")
 
+            plot_title = paste(str_to_title(forest_name),
+                               "Random Forest: AUC", 
+                               round(auc_metric, 3),
+                               collapse=" ")
+
             rf_roc_plot <- autoplot(rf_auc) + 
-                ggtitle(paste0(c("Narrow Random Forest: AUC", round(auc_metric, 3)), collapse=" ")) + 
+                ggtitle(plot_title) + 
                 theme(plot.title = element_text(size = 20, hjust = 0.5))
 
             rf_roc_plot
-            if(tosave) ggsave("pics/narrow_random_forest_roc_plot.svg", plot=rf_roc_plot)
+            plot_path = glue::glue("pics/", 
+                                   forest_name ,
+                                   "_random_forest_roc_plot.svg")
+            if(tosave) ggsave(plot_path, plot=rf_roc_plot)
         }
 
     }
@@ -358,24 +374,99 @@ wide_df = df
     { # Draw Distribution 
         validation_predictions <- rf_fit %>% collect_predictions()
 
+        plot_title = paste(str_to_title(forest_name),
+                           "Random Forest, Validation Distribution", 
+                           collapse=" ")
+
         rf_val_dist = validation_predictions %>% 
             ggplot() +
             geom_density(aes(x = .pred_True, fill = churn), alpha=0.5) +
             theme_bw() +
-            ggtitle("Narrow Random Forest, Validation Distribution") + 
+            ggtitle(plot_title) + 
             theme(plot.title = element_text(size = 20, hjust = 0.5))
         rf_val_dist
-        if(tosave) ggsave("pics/narrow_random_forest_validation_distribution.svg", plot=rf_val_dist)
+
+        plot_path = glue::glue("pics/", 
+                               forest_name, 
+                               "_random_forest_validation_distribution.svg")
+        if(tosave) ggsave(plot_path, plot=rf_val_dist)
 
         
     }
 
     { # Validation Metrics
-        validation_predictions %>% conf_mat    (truth = churn, estimate = .pred_class)
-        validation_predictions %>% recall      (truth = churn, estimate = .pred_class, event_level="second")
-        validation_predictions %>% accuracy    (truth = churn, estimate = .pred_class)
-        validation_predictions %>% bal_accuracy(truth = churn, estimate = .pred_class)
-        validation_predictions %>% kap         (truth = churn, estimate = .pred_class)
+        rf_conf_mat      = validation_predictions %>% conf_mat    (truth = churn, estimate = .pred_class)
+        rf_recall        = validation_predictions %>% recall      (truth = churn, estimate = .pred_class, event_level="second")
+        rf_accuracy      = validation_predictions %>% accuracy    (truth = churn, estimate = .pred_class)
+        rf_fbal_accuracy = validation_predictions %>% bal_accuracy(truth = churn, estimate = .pred_class)
+        rf_kap           = validation_predictions %>% kap         (truth = churn, estimate = .pred_class)
+
+        rf_metrics = list(rf_conf_mat     ,
+                          rf_recall       ,
+                          rf_accuracy     ,
+                          rf_fbal_accuracy,
+                          rf_kap          
+        )
     }
 
+    return(list(penalty_plot = rf_penalty_plot,
+                roc_plot     = rf_roc_plot    ,
+                valid_dist   = rf_val_dist    ,
+                metrics      = rf_metrics
+        )
+    )
+
+
 }
+
+
+# Narrow Models ---------------------------------------------------------------
+set.seed(5)
+narrow_churn_split = initial_split(narrow_df, prop=0.75)
+narrow_churn_train = training(narrow_churn_split)
+narrow_churn_valid = testing (narrow_churn_split)
+narrow_churn_cv    = vfold_cv(narrow_churn_train, strata=churn, v=10)
+
+
+narrow_forest = RandomForest(narrow_df         ,
+                             narrow_churn_split,
+                             narrow_churn_train,
+                             narrow_churn_valid,
+                             narrow_churn_cv   ,
+                             "narrow"
+)
+
+
+
+narrow_forest$penalty_plot %>% print() # idk how to make it print
+narrow_forest$roc_plot     %>% print()
+narrow_forest$valid_dist   %>% print()
+narrow_forest$metrics 
+
+# TODO: wrap into a single tibble, and separate conf_mat and metrics
+bind_rows(narrow_forest$metrics[2],
+          narrow_forest$metrics[3])
+
+# Wide Models -----------------------------------------------------------------
+set.seed(137) # just a fine number
+wide_churn_split = initial_split(wide_df, prop=0.75)
+wide_churn_train = training(wide_churn_split)
+wide_churn_valid = testing (wide_churn_split)
+wide_churn_cv    = vfold_cv(wide_churn_train, strata=churn, v=10)
+
+
+wide_forest = RandomForest(wide_df         ,
+                           wide_churn_split,
+                           wide_churn_train,
+                           wide_churn_valid,
+                           wide_churn_cv   ,
+                           "wide"
+)
+
+
+wide_forest$penalty_plot %>% print() # idk how to make it print
+wide_forest$roc_plot     %>% print()
+wide_forest$valid_dist   %>% print()
+wide_forest$metrics
+
+
