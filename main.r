@@ -288,10 +288,6 @@ wide_df = df
 
     }
 
-
-            rf_tune_results %>% 
-            collect_metrics()  %>% 
-            .$trees
     { # plot the penalty plot
         rf_plot_trees  <- 
             rf_tune_results %>% 
@@ -330,6 +326,8 @@ wide_df = df
             finalize_workflow(param_final) %>% 
             last_fit(churn_split)
 
+        rf_fit$.workflow # hyperparameter of the chosen model
+
     }
 
     { # ROC and AUC
@@ -339,7 +337,6 @@ wide_df = df
                 collect_predictions() %>% 
                 pROC::roc(churn, .pred_True)
             auc_metric = pROC::auc(roc_obj)[[1]]
-
 
         }
 
@@ -358,25 +355,27 @@ wide_df = df
 
     }
 
-    { # Validation of Narrowed Random Forest
+    { # Draw Distribution 
+        validation_predictions <- rf_fit %>% collect_predictions()
 
-        test_performance <- rf_fit %>% 
-            collect_metrics(); test_performance
-
-        test_predictions <- rf_fit %>% 
-            collect_predictions(); test_predictions
-
-        test_predictions %>% conf_mat(truth = churn, estimate = .pred_class)
-
-        test_predictions %>% 
+        rf_val_dist = validation_predictions %>% 
             ggplot() +
             geom_density(aes(x = .pred_True, fill = churn), alpha=0.5) +
-            theme_bw()
+            theme_bw() +
+            ggtitle("Narrow Random Forest, Validation Distribution") + 
+            theme(plot.title = element_text(size = 20, hjust = 0.5))
+        rf_val_dist
+        if(tosave) ggsave("pics/narrow_random_forest_validation_distribution.svg", plot=rf_val_dist)
 
-        treatment_fit <- fit(rf_workflow, data=churn_valid)
-
-        predicted = predict(treatment_fit, df_test)
-        accuracy = sum(df_test$treatment == predicted)/nrow(predicted)
-        accuracy
+        
     }
+
+    { # Validation Metrics
+        validation_predictions %>% conf_mat    (truth = churn, estimate = .pred_class)
+        validation_predictions %>% recall      (truth = churn, estimate = .pred_class, event_level="second")
+        validation_predictions %>% accuracy    (truth = churn, estimate = .pred_class)
+        validation_predictions %>% bal_accuracy(truth = churn, estimate = .pred_class)
+        validation_predictions %>% kap         (truth = churn, estimate = .pred_class)
+    }
+
 }
