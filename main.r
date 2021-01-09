@@ -286,7 +286,7 @@ RandomForest <- function(df         ,
 
         rf_tune_results <- rf_workflow %>% 
             tune_grid(resamples = churn_cv,
-                      metrics   = metric_set(accuracy, recall, roc_auc),
+                      metrics   = metric_set(bal_accuracy, recall, roc_auc),
                       control   = ctrl
             )
 
@@ -328,7 +328,7 @@ RandomForest <- function(df         ,
 
     { # choosing the best parameter and building the final model
         param_final  <- rf_tune_results %>% 
-            select_best(metric = "roc_auc")
+            select_best(metric = "bal_accuracy")
 
         rf_fit  <- rf_workflow %>% 
             finalize_workflow(param_final) %>% 
@@ -396,22 +396,23 @@ RandomForest <- function(df         ,
 
     { # Validation Metrics
         rf_conf_mat      = validation_predictions %>% conf_mat    (truth = churn, estimate = .pred_class)
+
         rf_recall        = validation_predictions %>% recall      (truth = churn, estimate = .pred_class, event_level="second")
         rf_accuracy      = validation_predictions %>% accuracy    (truth = churn, estimate = .pred_class)
         rf_fbal_accuracy = validation_predictions %>% bal_accuracy(truth = churn, estimate = .pred_class)
         rf_kap           = validation_predictions %>% kap         (truth = churn, estimate = .pred_class)
 
-        rf_metrics = list(rf_conf_mat     ,
-                          rf_recall       ,
-                          rf_accuracy     ,
-                          rf_fbal_accuracy,
-                          rf_kap          
+        rf_metrics = bind_rows(rf_recall       ,
+                               rf_accuracy     ,
+                               rf_fbal_accuracy,
+                               rf_kap          
         )
     }
 
     return(list(penalty_plot = rf_penalty_plot,
                 roc_plot     = rf_roc_plot    ,
                 valid_dist   = rf_val_dist    ,
+                conf_mat     = rf_conf_mat    ,
                 metrics      = rf_metrics
         )
     )
@@ -437,15 +438,13 @@ narrow_forest = RandomForest(narrow_df         ,
 )
 
 
-
+# TODO: add model to return values
 narrow_forest$penalty_plot %>% print() # idk how to make it print
 narrow_forest$roc_plot     %>% print()
 narrow_forest$valid_dist   %>% print()
+narrow_forest$conf_mat 
 narrow_forest$metrics 
 
-# TODO: wrap into a single tibble, and separate conf_mat and metrics
-bind_rows(narrow_forest$metrics[2],
-          narrow_forest$metrics[3])
 
 # Wide Models -----------------------------------------------------------------
 set.seed(137) # just a fine number
@@ -467,6 +466,7 @@ wide_forest = RandomForest(wide_df         ,
 wide_forest$penalty_plot %>% print() # idk how to make it print
 wide_forest$roc_plot     %>% print()
 wide_forest$valid_dist   %>% print()
-wide_forest$metrics
+wide_forest$conf_mat 
+wide_forest$metrics 
 
 
