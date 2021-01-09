@@ -199,10 +199,22 @@ narrow_df  %>% glimpse() # now we have only 9 variables.
             ggtitle("Variable density") +
             theme(plot.title = element_text(size = 20, hjust = 0.5))
     }
+
+    draw_hist <- function(tdf){
+        p = tdf %>% 
+            ggplot(aes(variable, fill=churn)) +
+            geom_histogram(stat="count", position="dodge", alpha=0.8) + 
+            scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                          labels = trans_format("log10", math_format(10^.x))) +
+            theme_bw() + 
+            ggtitle("variable histogram") +
+            theme(plot.title = element_text(size = 20, hjust = 0.5))
+    }
+
+    gchurn = df$churn
 }
 
 { # Draw continuous variables
-    gchurn = df$churn
     continuous_df = df %>% select(-churn, -international.plan, - voice.mail.plan)
 
     continuous_plots = continuous_df %>% 
@@ -217,24 +229,19 @@ narrow_df  %>% glimpse() # now we have only 9 variables.
     }
 }
 
-continuous_plots  %>% str(max.level=1)
 
-fb[1]
+{ # Draw discrete variables
+    discrete_df = df %>% select(international.plan, voice.mail.plan)
 
-df %>% glimpse()
+    discrete_plots = discrete_df %>% 
+        map(function(x) draw_hist(data.frame(variable=x, churn=gchurn)))
 
-df %>% 
-    ggplot(aes(total.day.minutes, fill=churn)) +
-    geom_density(alpha=.3) +
-    theme_bw() + 
-    ggtitle("total.day.minutes density") +
-    theme(plot.title = element_text(size = 20, hjust = 0.5))
+    for(name in names(discrete_df)){
+        print(discrete_plots[[name]] + labs(title = paste("Histogram of ", gsub("\\.", " ", name))))
+        plot_name = gsub("\\.", "_", name) 
+        plot_name = glue::glue("pics/", plot_name, ".svg")
 
-df %>% 
-    ggplot(aes(voice.mail.plan, fill=churn)) +
-    geom_histogram(stat="count", position="dodge", alpha=0.8) + 
-    scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
-                  labels = trans_format("log10", math_format(10^.x))) +
-    theme_bw() + 
-    ggtitle("voice.mail.plan histogram") +
-    theme(plot.title = element_text(size = 20, hjust = 0.5))
+        if(tosave) ggsave(plot_name)
+    }
+}
+
