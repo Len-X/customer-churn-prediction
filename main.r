@@ -392,9 +392,7 @@ RandomForest <- function(df         ,
         if(tosave) ggsave(plot_path, plot=rf_penalty_plot)
 
     }
-    # On the plot you can see that the model is overfitted because 
-    # recall equals to 1 when number of trees equals to 1517 or
-    # mtry = 1. So we will choose our hyperparameter by ROC AUC.
+    # We will choose our hyperparameter by ROC AUC.
 
     { # choosing the best parameter and building the final model
         param_final  <- rf_tune_results %>% 
@@ -491,6 +489,115 @@ RandomForest <- function(df         ,
 
 }
 
+{ # to show why we will use svm_rbf over svm_poly
+
+    { # define recipe and model, and train model
+        svm_recipe <- narrow_df %>% 
+            recipe(churn ~ .)  %>% 
+            step_zv(all_predictors()) %>% 
+            step_lincomb(all_numeric())  %>% 
+            step_normalize(all_numeric())
+
+        svm_model_poly <-
+            svm_poly(cost = tune(), scale_factor = tune()) %>%
+            set_mode("classification") %>%
+            set_engine("kernlab")
+
+        svm_poly_workflow <- workflow() %>% 
+            add_recipe(svm_recipe) %>% 
+            add_model(svm_model_poly)
+
+        svm_model_rbf <-
+            svm_rbf(cost = tune(), rbf_sigma = tune()) %>%
+            set_mode("classification") %>%
+            set_engine("kernlab")
+
+        svm_rbf_workflow <- workflow() %>% 
+            add_recipe(svm_recipe) %>% 
+            add_model(svm_model_rbf)
+
+        ctrl <- control_grid(verbose = TRUE, save_pred = TRUE)
+
+        doParallel::registerDoParallel()
+
+        svm_poly_tune_results <- svm_poly_workflow %>% 
+            tune_grid(resamples = narrow_churn_cv,
+                      metrics   = metric_set(bal_accuracy, recall, roc_auc),
+                      control = ctrl
+          )
+
+        svm_rbf_tune_results <- svm_rbf_workflow %>% 
+            tune_grid(resamples = narrow_churn_cv,
+                      metrics   = metric_set(bal_accuracy, recall, roc_auc),
+                      control = ctrl
+          )
+
+    }
+
+    { # plot the penalty plot for poly method
+        svm_plot_cost  <- 
+            svm_poly_tune_results %>% 
+            collect_metrics() %>% 
+            ggplot(aes(x = cost, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            theme_bw() +
+            ggtitle("Polynomial SVM: penalty plot") +
+            theme(plot.title = element_text(size = 20, hjust = 0.5))
+
+        # bal_accuracy parameter clearly demonstrates that
+        # mtry more than 3 = floor(sqrt(9)) does not bring 
+        # a huge difference
+
+
+        svm_plot_scale  <- 
+            svm_poly_tune_results %>% 
+            collect_metrics() %>% 
+            ggplot(aes(x = scale_factor, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            theme_bw() 
+
+        svm_poly_plot = grid.arrange(svm_plot_cost, svm_plot_scale, nrow = 2)
+
+        svm_poly_plot # just to show the plot
+        if(tosave) ggsave("pics/svm_poly_penalty_plot.svg", 
+                          plot=svm_poly_plot)
+
+    }
+
+    { # plot the penalty plot for rbf method
+        svm_plot_cost  <- 
+            svm_rbf_tune_results %>% 
+            collect_metrics() %>% 
+            ggplot(aes(x = cost, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            theme_bw() +
+            ggtitle("Radial Basis Function SVM: penalty plot") +
+            theme(plot.title = element_text(size = 20, hjust = 0.5))
+
+
+        svm_plot_sigma  <- 
+            svm_rbf_tune_results %>% 
+            collect_metrics() %>% 
+            ggplot(aes(x = rbf_sigma, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            theme_bw() 
+
+        svm_rbf_plot = grid.arrange(svm_plot_cost, svm_plot_sigma, nrow = 2)
+
+        svm_rbf_plot # just to show the plot
+        if(tosave) ggsave("pics/svm_rbf_penalty_plot.svg", 
+                          plot=svm_rbf_plot)
+
+    }
+}
 
 SupportVectorMachine <- function(df         ,
                                  churn_split, 
@@ -499,17 +606,25 @@ SupportVectorMachine <- function(df         ,
                                  churn_cv   , 
                                  svm_name)
 {
+    ### LOCAL TESTING
+    #df          = wide_df
+    #churn_split = wide_churn_split
+    #churn_train = wide_churn_train
+    #churn_valid = wide_churn_valid
+    #churn_cv    = wide_churn_cv
+    #svm_name    = "wide"
+    ### LOCAL TESTING
 
     { # define recipe and model, and train model
         svm_recipe <- df %>% 
             recipe(churn ~ .)  %>% 
-            step_zv(all_predictors()) %>% 
+            step_zv(all_numeric()) %>% 
             step_lincomb(all_numeric()) %>% 
             step_normalize(all_numeric())
 
 
         svm_model <-
-            svm_poly(cost = tune(), scale_factor = tune()) %>%
+            svm_rbf(cost = tune(), rbf_sigma = tune()) %>%
             set_mode("classification") %>%
             set_engine("kernlab")
 
@@ -517,12 +632,17 @@ SupportVectorMachine <- function(df         ,
             add_recipe(svm_recipe) %>% 
             add_model(svm_model)
 
+        svm_grid <- grid_regular(cost(range = c(0, 4)),
+                                 rbf_sigma(range = c(-5, 1)),
+                                 levels = 6
+        )
         ctrl <- control_grid(verbose = TRUE, save_pred = TRUE)
 
         doParallel::registerDoParallel()
 
         svm_tune_results <- svm_workflow %>% 
             tune_grid(resamples = churn_cv,
+                      grid      = svm_grid,
                       metrics   = metric_set(bal_accuracy, recall, roc_auc),
                       control = ctrl
           )
@@ -530,34 +650,129 @@ SupportVectorMachine <- function(df         ,
     }
 
     { # plot the penalty plot
+
+        plot_title = paste(str_to_title(svm_name),
+                           "SVM penalty plot", 
+                           collapse=" ")
         svm_plot_cost  <- 
             svm_tune_results %>% 
             collect_metrics() %>% 
-            #         filter(.metric == "roc_auc") %>% 
             ggplot(aes(x = cost, y = mean)) +
             geom_point() +
             geom_line() +
             facet_wrap(~.metric) +
-            #         ylab("AUC the ROC Curve") +
             theme_bw() +
-            ggtitle("Tuning regarding to Cost")
-
+            ggtitle(plot_title) +
+            theme(plot.title = element_text(size = 20, hjust = 0.5))
 
         svm_plot_sigma  <- 
             svm_tune_results %>% 
             collect_metrics() %>% 
-            #         filter(.metric == "roc_auc") %>% 
-            ggplot(aes(x = scale_factor, y = mean)) +
+            ggplot(aes(x = rbf_sigma, y = mean)) +
             geom_point() +
             geom_line() +
             facet_wrap(~.metric) +
-            #         ylab("AUC the ROC Curve") +
-            theme_bw() +
-            ggtitle("Tuning regarding to Sigma")
+            scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                          labels = trans_format("log10", math_format(10^.x))) +
+            theme_bw() 
 
-        grid.arrange(svm_plot_cost, svm_plot_sigma, nrow = 2)
+        svm_penalty_plot = grid.arrange(svm_plot_cost, svm_plot_sigma, nrow = 2)
+        plot_path = glue::glue("pics/", svm_name ,"_svm_penalty_plot.svg")
+        if(tosave) ggsave(plot_path, plot=svm_penalty_plot)
 
     }
+
+    { # choosing the best parameter and building the final model
+        param_final  <- svm_tune_results %>% 
+            select_best(metric = "roc_auc")
+
+        svm_fit  <- svm_workflow %>% 
+            finalize_workflow(param_final) %>% 
+            last_fit(churn_split)
+
+        print(svm_fit$.workflow) # hyperparameters of the chosen model
+
+    }
+
+    { # ROC and AUC
+
+        { # calculate AUC
+            roc_obj = svm_fit %>% 
+                collect_predictions() %>% 
+                pROC::roc(churn, .pred_True)
+            auc_metric = pROC::auc(roc_obj)[[1]]
+
+        }
+
+        { # draw ROC
+            svm_auc <- svm_fit %>% collect_predictions() %>% 
+                roc_curve(churn, .pred_False) %>% 
+                mutate(model = "Support Vector Machine")
+
+            plot_title = paste(str_to_title(svm_name),
+                               "SVM: AUC", 
+                               round(auc_metric, 3),
+                               collapse=" ")
+
+            svm_roc_plot <- autoplot(svm_auc) + 
+                ggtitle(plot_title) + 
+                theme(plot.title = element_text(size = 20, hjust = 0.5))
+
+            svm_roc_plot
+            plot_path = glue::glue("pics/", 
+                                   svm_name ,
+                                   "_svm_roc_plot.svg")
+            if(tosave) ggsave(plot_path, plot=svm_roc_plot)
+        }
+
+    }
+
+    { # Draw Distribution 
+        validation_predictions <- svm_fit %>% collect_predictions()
+
+        plot_title = paste(str_to_title(svm_name),
+                           "SVM, Validation Distribution", 
+                           collapse=" ")
+
+        svm_val_dist = validation_predictions %>% 
+            ggplot() +
+            geom_density(aes(x = .pred_True, fill = churn), alpha=0.5) +
+            theme_bw() +
+            ggtitle(plot_title) + 
+            theme(plot.title = element_text(size = 20, hjust = 0.5))
+
+        plot_path = glue::glue("pics/", 
+                               svm_name, 
+                               "_svm_validation_distribution.svg")
+        if(tosave) ggsave(plot_path, plot=svm_val_dist)
+
+        
+    }
+
+    { # Validation Metrics
+        svm_conf_mat      = validation_predictions %>% conf_mat    (truth = churn, estimate = .pred_class)
+
+        svm_recall        = validation_predictions %>% recall      (truth = churn, estimate = .pred_class, event_level="second")
+        svm_accuracy      = validation_predictions %>% accuracy    (truth = churn, estimate = .pred_class)
+        svm_fbal_accuracy = validation_predictions %>% bal_accuracy(truth = churn, estimate = .pred_class)
+        svm_kap           = validation_predictions %>% kap         (truth = churn, estimate = .pred_class)
+
+        svm_metrics = bind_rows(svm_recall       ,
+                                svm_accuracy     ,
+                                svm_fbal_accuracy,
+                                svm_kap          
+        )
+    }
+
+    return(list(workflow     = svm_workflow    ,
+                penalty_plot = svm_penalty_plot,
+                roc_plot     = svm_roc_plot    ,
+                valid_dist   = svm_val_dist    ,
+                conf_mat     = svm_conf_mat    ,
+                metrics      = svm_metrics
+        )
+    )
+
 }
 
 
@@ -573,7 +788,6 @@ narrow_forest = RandomForest(narrow_df         ,
 )
 
 
-# TODO: add model to return values
 narrow_forest$penalty_plot %>% print() # idk how to make it print
 narrow_forest$roc_plot     %>% print()
 narrow_forest$valid_dist   %>% print()
@@ -589,6 +803,14 @@ narrow_svm = SupportVectorMachine(narrow_df         ,
                                   narrow_churn_cv   ,
                                   "narrow"
 )
+
+
+narrow_svm$penalty_plot %>% print() # idk how to make it print
+narrow_svm$roc_plot     %>% print()
+narrow_svm$valid_dist   %>% print()
+narrow_svm$conf_mat 
+narrow_svm$metrics 
+narrow_svm$workflow  
 
 # Wide Models -----------------------------------------------------------------
 
@@ -608,4 +830,18 @@ wide_forest$valid_dist   %>% print()
 wide_forest$conf_mat 
 wide_forest$metrics 
 
+
+wide_svm = SupportVectorMachine(wide_df         ,
+                                wide_churn_split,
+                                wide_churn_train,
+                                wide_churn_valid,
+                                wide_churn_cv   ,
+                                "wide"
+)
+
+wide_svm$penalty_plot %>% print() # idk how to make it print
+wide_svm$roc_plot     %>% print()
+wide_svm$valid_dist   %>% print()
+wide_svm$conf_mat 
+wide_svm$metrics 
 
