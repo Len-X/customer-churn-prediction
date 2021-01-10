@@ -284,6 +284,8 @@ RandomForest <- function(df         ,
 
         ctrl <- control_grid(verbose = TRUE, save_pred = TRUE)
 
+        doParallel::registerDoParallel()
+
         rf_tune_results <- rf_workflow %>% 
             tune_grid(resamples = churn_cv,
                       metrics   = metric_set(bal_accuracy, recall, roc_auc),
@@ -409,7 +411,8 @@ RandomForest <- function(df         ,
         )
     }
 
-    return(list(penalty_plot = rf_penalty_plot,
+    return(list(workflow     = rf_workflow %>% finalize_workflow(param_final),
+                penalty_plot = rf_penalty_plot,
                 roc_plot     = rf_roc_plot    ,
                 valid_dist   = rf_val_dist    ,
                 conf_mat     = rf_conf_mat    ,
@@ -418,6 +421,75 @@ RandomForest <- function(df         ,
     )
 
 
+}
+
+
+SupportVectorMachine <- function(df         ,
+                                 churn_split, 
+                                 churn_train, 
+                                 churn_valid, 
+                                 churn_cv   , 
+                                 svm_name)
+{
+
+    { # define recipe and model, and train model
+        svm_recipe <- df %>% 
+            recipe(churn ~ .)  %>% 
+            step_zv(all_predictors()) %>% 
+            step_lincomb(all_numeric()) %>% 
+            step_normalize(all_numeric())
+
+
+        svm_model <-
+            svm_poly(cost = tune(), scale_factor = tune()) %>%
+            set_mode("classification") %>%
+            set_engine("kernlab")
+
+        svm_workflow <- workflow() %>% 
+            add_recipe(svm_recipe) %>% 
+            add_model(svm_model)
+
+        ctrl <- control_grid(verbose = TRUE, save_pred = TRUE)
+
+        doParallel::registerDoParallel()
+
+        svm_tune_results <- svm_workflow %>% 
+            tune_grid(resamples = churn_cv,
+                      metrics   = metric_set(bal_accuracy, recall, roc_auc),
+                      control = ctrl
+          )
+
+    }
+
+    { # plot the penalty plot
+        svm_plot_cost  <- 
+            svm_tune_results %>% 
+            collect_metrics() %>% 
+            #         filter(.metric == "roc_auc") %>% 
+            ggplot(aes(x = cost, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            #         ylab("AUC the ROC Curve") +
+            theme_bw() +
+            ggtitle("Tuning regarding to Cost")
+
+
+        svm_plot_sigma  <- 
+            svm_tune_results %>% 
+            collect_metrics() %>% 
+            #         filter(.metric == "roc_auc") %>% 
+            ggplot(aes(x = scale_factor, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            #         ylab("AUC the ROC Curve") +
+            theme_bw() +
+            ggtitle("Tuning regarding to Sigma")
+
+        grid.arrange(svm_plot_cost, svm_plot_sigma, nrow = 2)
+
+    }
 }
 
 
@@ -444,7 +516,16 @@ narrow_forest$roc_plot     %>% print()
 narrow_forest$valid_dist   %>% print()
 narrow_forest$conf_mat 
 narrow_forest$metrics 
+narrow_forest$workflow  
 
+
+narrow_svm = SupportVectorMachine(narrow_df         ,
+                                  narrow_churn_split,
+                                  narrow_churn_train,
+                                  narrow_churn_valid,
+                                  narrow_churn_cv   ,
+                                  "narrow"
+)
 
 # Wide Models -----------------------------------------------------------------
 set.seed(137) # just a fine number
