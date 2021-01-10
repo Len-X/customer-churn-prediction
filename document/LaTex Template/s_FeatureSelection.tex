@@ -1,1 +1,11 @@
+\section{Feature Selection}\label{featureselection}
+
+Feature selection is the process of choosing variables that are useful in predicting the target variable Y. Since we have 20 predictor variables, not all 20 are equally useful (have the same effect) in predicting outcome variable “churn”.
+
+We use the Boruta algorithm and Correlation step function for this. Boruta is a feature ranking and selection algorithm based on random forests algorithm.
+The advantage with Boruta is that it clearly decides if a variable is important or not and helps to select variables that are statistically significant. Besides, it allows to adjust the strictness of the algorithm by adjusting the p values that defaults to 0.01 and the maxRuns.
+
+After running it, the algorithm confirms 13 attributes as important and 6 attributes as unimportant. Amongst an unimportant features are: account.length, area.code, state,
+total.day.calls, total.eve.calls and total.night.calls. We can drop them and use only the remaining 13 confirmed features. Below is the visualization of the results.
+
 
