@@ -884,50 +884,49 @@ left_join(narrow_svm_metrics, narrow_forest_metrics, by="metric")  %>%
 
 # 6. Model Testing =============================================================
 
-df %>% glimpse()
-narrow_df %>% glimpse()
-test_df   %>% glimpse()
 
-correlation_recipe = test_df  %>% 
-    select(churn, all_of(names_to_select)) %>% 
-    recipe(churn ~ .) %>% 
-    step_dummy(c(international.plan, voice.mail.plan), one_hot=T)  
+{ # to make test data frame in the same format as it was done outside of
+  # the recipe in the RandomForest function
+    correlation_recipe = test_df  %>% 
+        select(churn, all_of(names_to_select)) %>% 
+        recipe(churn ~ .) %>% 
+        step_dummy(c(international.plan, voice.mail.plan), one_hot=T)  
 
-narrow_test_df = correlation_recipe %>% 
-    prep() %>% 
-    juice()
-# to make test data frame in the same format
+    narrow_test_df = correlation_recipe %>% 
+        prep() %>% 
+        juice()
+}
 
-# narrow_test_df %>% glimpse()
+{ # final fit testing data
+    ffit = narrow_forest$workflow %>% 
+        parsnip::fit(narrow_df) # here we will use all the training data 
+                                # to refit it, as hparameters were already found
 
-# narrow_forest$workflow %>% 
-#     fit(narrow_test_df)
-# 
-# fb = narrow_forest$workflow %>% 
-#     fit(narrow_test_df) 
-# fb %>% str(max.level=1)
-# fb$pre$mold$outcomes == narrow_test_df$churn
-# bar = fb$post$mold$outcomes %>% unlist() %>% unname()
-# fb$post %>% str()
-# bar == narrow_test_df$churn
-# fb$post$mold
+        rf_final_fit = pull_workflow_fit(ffit)
+
+        predicted = predict(rf_final_fit,new_data = narrow_test_df)
+        testing_prediction = bind_cols(narrow_test_df, predicted)
+}
 
 
-ffit = rf_workflow %>% 
-    finalize_workflow(param_final) %>% 
-    parsnip::fit(test_df %>% 
-        mutate(international.plan_Yes = international.plan))  
+{ # calculate final testing metrics
+    rf_conf_mat      = testing_prediction %>% conf_mat    (truth = churn, estimate = .pred_class)
+
+    rf_recall        = testing_prediction %>% recall      (truth = churn, estimate = .pred_class, event_level="second")
+    rf_accuracy      = testing_prediction %>% accuracy    (truth = churn, estimate = .pred_class)
+    rf_fbal_accuracy = testing_prediction %>% bal_accuracy(truth = churn, estimate = .pred_class)
+    rf_kap           = testing_prediction %>% kap         (truth = churn, estimate = .pred_class)
 
 
-rf_final_fit = pull_workflow_fit(ffit)
+    rf_metrics = bind_rows(rf_recall       ,
+                           rf_accuracy     ,
+                           rf_fbal_accuracy,
+                           rf_kap          ) %>% 
+        select(-.estimator)
 
-predicted = predict(rf_final_fit,
-                    new_data=narrow_test_df)
-testing_prediction = bind_cols(narrow_test_df, predicted)
+    rf_metrics
+}
 
-testing_prediction %>% conf_mat    (truth = churn, estimate = .pred_class)
-testing_prediction %>% recall      (truth = churn, estimate = .pred_class, event_level="second")
-testing_prediction %>% accuracy    (truth = churn, estimate = .pred_class)
-testing_prediction %>% bal_accuracy(truth = churn, estimate = .pred_class)
-testing_prediction %>% kap         (truth = churn, estimate = .pred_class)
+
+
 
