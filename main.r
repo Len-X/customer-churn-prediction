@@ -876,6 +876,7 @@ narrow_forest_metrics = narrow_forest$metrics %>%
            narrow_rf = .estimate)
 
 left_join(wide_forest_metrics, narrow_forest_metrics, by="metric") %>% 
+    mutate(diff = narrow_rf - wide_rf)
 
 # Compare RF and SVM -----------------------------------------------------------
 left_join(narrow_svm_metrics, narrow_forest_metrics, by="metric")  %>% 
