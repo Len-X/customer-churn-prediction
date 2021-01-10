@@ -320,12 +320,12 @@ RandomForest <- function(df         ,
                          churn_cv   , 
                          forest_name){
     ### LOCAL TESTING
-    # df          = wide_df
-    # churn_split = wide_churn_split
-    # churn_train = wide_churn_train
-    # churn_valid = wide_churn_valid
-    # churn_cv    = wide_churn_cv
-    # forest_name = "wide"
+    #df          = narrow_df
+    #churn_split = narrow_churn_split
+    #churn_train = narrow_churn_train
+    #churn_valid = narrow_churn_valid
+    #churn_cv    = narrow_churn_cv
+    #forest_name = "narrow"
     ### LOCAL TESTING
     { # define recipe and a random forest model, and tune the model
         rf_recipe <- df %>% 
@@ -477,6 +477,7 @@ RandomForest <- function(df         ,
         )
     }
 
+    rf_workflow = rf_workflow %>% finalize_workflow(param_final)
     return(list(workflow     = rf_workflow    ,
                 penalty_plot = rf_penalty_plot,
                 roc_plot     = rf_roc_plot    ,
@@ -764,6 +765,7 @@ SupportVectorMachine <- function(df         ,
         )
     }
 
+    svm_workflow = svm_workflow %>% finalize_workflow(param_final)
     return(list(workflow     = svm_workflow    ,
                 penalty_plot = svm_penalty_plot,
                 roc_plot     = svm_roc_plot    ,
@@ -843,5 +845,89 @@ wide_svm$penalty_plot %>% print() # idk how to make it print
 wide_svm$roc_plot     %>% print()
 wide_svm$valid_dist   %>% print()
 wide_svm$conf_mat 
-wide_svm$metrics 
+wide_svm$metrics %>% select(-.estimator)
+
+# Compare Wide and Narrow SVM models -------------------------------------------
+
+wide_svm_metrics = wide_svm$metrics %>% 
+    select(-.estimator) %>% 
+    rename(metric   = .metric, 
+           wide_svm = .estimate)
+
+narrow_svm_metrics = narrow_svm$metrics %>% 
+    select(-.estimator) %>% 
+    rename(metric     = .metric, 
+           narrow_svm = .estimate)
+
+left_join(wide_svm_metrics, narrow_svm_metrics, by="metric") %>% 
+    mutate(diff = narrow_svm - wide_svm)
+
+
+# Compare Wide and Narrow RF models --------------------------------------------
+
+wide_forest_metrics = wide_forest$metrics %>% 
+    select(-.estimator) %>% 
+    rename(metric  = .metric, 
+           wide_rf = .estimate)
+
+narrow_forest_metrics = narrow_forest$metrics %>% 
+    select(-.estimator) %>% 
+    rename(metric    = .metric, 
+           narrow_rf = .estimate)
+
+left_join(wide_forest_metrics, narrow_forest_metrics, by="metric") %>% 
+
+# Compare RF and SVM -----------------------------------------------------------
+left_join(narrow_svm_metrics, narrow_forest_metrics, by="metric")  %>% 
+    mutate(diff = narrow_rf - narrow_svm)
+# so we choose Narrow Random Forest Model
+
+# 6. Model Testing =============================================================
+
+df %>% glimpse()
+narrow_df %>% glimpse()
+test_df   %>% glimpse()
+
+correlation_recipe = test_df  %>% 
+    select(churn, all_of(names_to_select)) %>% 
+    recipe(churn ~ .) %>% 
+    step_dummy(c(international.plan, voice.mail.plan), one_hot=T)  
+
+narrow_test_df = correlation_recipe %>% 
+    prep() %>% 
+    juice()
+# to make test data frame in the same format
+
+# narrow_test_df %>% glimpse()
+
+# narrow_forest$workflow %>% 
+#     fit(narrow_test_df)
+# 
+# fb = narrow_forest$workflow %>% 
+#     fit(narrow_test_df) 
+# fb %>% str(max.level=1)
+# fb$pre$mold$outcomes == narrow_test_df$churn
+# bar = fb$post$mold$outcomes %>% unlist() %>% unname()
+# fb$post %>% str()
+# bar == narrow_test_df$churn
+# fb$post$mold
+
+
+ffit = rf_workflow %>% 
+    finalize_workflow(param_final) %>% 
+    parsnip::fit(test_df %>% 
+        mutate(international.plan_Yes = international.plan))  
+
+
+rf_final_fit = pull_workflow_fit(ffit)
+
+predicted = predict(rf_final_fit,
+                    new_data=narrow_test_df)
+testing_prediction = bind_cols(narrow_test_df, predicted)
+
+testing_prediction %>% conf_mat    (truth = churn, estimate = .pred_class)
+testing_prediction %>% recall      (truth = churn, estimate = .pred_class, event_level="second")
+testing_prediction %>% accuracy    (truth = churn, estimate = .pred_class)
+testing_prediction %>% bal_accuracy(truth = churn, estimate = .pred_class)
+testing_prediction %>% kap         (truth = churn, estimate = .pred_class)
 
