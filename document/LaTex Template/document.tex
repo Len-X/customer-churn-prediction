@@ -7,21 +7,42 @@
 
 \include{preamble}
 
-\title{Document Title}
-\author{Author Name\\
-  \small{Class Number - Class Name}\\
-  \small{Your Educational Institution}\\
+\title{Customer Churn Project Report}
+\author{Olena Horyn\\
+        Ilya Ozhmegov\\
+        Yusif Ifraimov\\
+  \small{Machine Learning 2}\\
+  \small{Beuth University of Applied Sciences }\\
   \small{\texttt{email@address.com}}
+  
+
 }
-\date{December 15, 2012}
-
+\date{January 10, 2021}
+\usepackage{graphicx}
+\graphicspath{ {images/} }
 \begin{document}
-
 \setstretch{1.00}
 \maketitle
 
-% -- Table of Contents --
-% (would go here)
+\newpage
+
+\section*{Table of Contents}
+{\large
+\begin {enumerate} 
+\bfseries
+	\item 
+	    \hyperref[introduction]{Introduction}
+	\item 
+	    \hyperref[dataset]{Data Set}
+	\item Feature Selection
+	    \hyperref[featureselection]{Feature Selection}
+	\item EDA
+	\item Model Selection/Description
+	\item Performance
+	\item Conclusion
+	\item Resources
+\end{enumerate}
+}
 
 % -- set document spacing --
 % \setstretch{1.09}  % single line
@@ -29,7 +50,13 @@
 % \setstretch{1.50}  % one and a half spacing
 
 % -- Import content here
+\newpage
 \input{s_introduction}
+\newpage
+\input{s_DataSet}
+\newpage
+\input{s_FeatureSelection}
+
 
 
 % -- Bibliography (APA style)
