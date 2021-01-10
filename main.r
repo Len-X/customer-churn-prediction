@@ -252,6 +252,67 @@ wide_df = df
 # Training and Validation. 60% of original data frame corresponds to 75 % of
 # out narrow_df or wide_df data frame. (0.8 * 0.75 = 0.6)
 
+set.seed(5)
+narrow_churn_split = initial_split(narrow_df, prop=0.75)
+narrow_churn_train = training(narrow_churn_split)
+narrow_churn_valid = testing (narrow_churn_split)
+narrow_churn_cv    = vfold_cv(narrow_churn_train, strata=churn, v=10)
+
+set.seed(137) # just a fine number
+wide_churn_split = initial_split(wide_df, prop=0.75)
+wide_churn_train = training(wide_churn_split)
+wide_churn_valid = testing (wide_churn_split)
+wide_churn_cv    = vfold_cv(wide_churn_train, strata=churn, v=10)
+
+{ # to show why we won't tune random forest by mtry
+    {
+        rf_recipe <- narrow_df %>% 
+            recipe(churn ~ .)
+
+        rf_model <- rand_forest() %>% 
+            set_args(mtry = tune()) %>% 
+            set_engine("ranger", importance = "impurity") %>% 
+            set_mode("classification")
+
+        rf_workflow <- workflow() %>% 
+            add_recipe(rf_recipe) %>% 
+            add_model(rf_model)
+
+        ctrl <- control_grid(verbose = TRUE, save_pred = TRUE)
+
+        doParallel::registerDoParallel()
+
+        rf_tune_results <- rf_workflow %>% 
+            tune_grid(resamples = narrow_churn_cv,
+                      metrics   = metric_set(bal_accuracy, recall, roc_auc),
+                      control   = ctrl
+            )
+    }
+
+
+
+    { # plot the penalty plot
+        rf_plot_mtry  <- 
+            rf_tune_results %>% 
+            collect_metrics() %>% 
+            ggplot(aes(x = mtry, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            theme_bw() +
+            ggtitle("Random Forest: tuning by mtry parameter") +
+            theme(plot.title = element_text(size = 20, hjust = 0.5))
+
+        rf_plot_mtry # just to show the plot
+        if(tosave) ggsave("pics/_random_forest_penalty_plot.svg", 
+                          plot=rf_plot_mtry)
+        # bal_accuracy parameter clearly demonstrates that
+        # mtry more than 3 = floor(sqrt(9)) does not bring 
+        # a huge difference
+
+    }
+}
+
 RandomForest <- function(df         ,
                          churn_split, 
                          churn_train, 
@@ -270,11 +331,10 @@ RandomForest <- function(df         ,
         rf_recipe <- df %>% 
             recipe(churn ~ .)
 
+        m = df %>% ncol() %>% sqrt() %>% floor()
+
         rf_model <- rand_forest() %>% 
-            # the number of trees will be tuned from 125 to 1855
-            # the number of variable will be tuned from 1 to 8
-            # we expect that the best mtry will be 2 or 3
-            set_args(mtry = tune(), trees = tune()) %>% 
+            set_args(mtry = m, trees = tune(), min_n = tune()) %>% 
             set_engine("ranger", importance = "impurity") %>% 
             set_mode("classification")
 
@@ -282,12 +342,20 @@ RandomForest <- function(df         ,
             add_recipe(rf_recipe) %>% 
             add_model(rf_model)
 
+        # the number of trees will be tuned from 125 to 500.
+        # the minimum number of data points in a node 
+        # will be tuned from 2 to 8.
+        rf_grid <- grid_regular(trees(range = c(125, 500)),
+                                min_n(range = c(2, 8)),
+                                levels = 6
+        )
         ctrl <- control_grid(verbose = TRUE, save_pred = TRUE)
 
         doParallel::registerDoParallel()
 
         rf_tune_results <- rf_workflow %>% 
             tune_grid(resamples = churn_cv,
+                      grid      = rf_grid,
                       metrics   = metric_set(bal_accuracy, recall, roc_auc),
                       control   = ctrl
             )
@@ -309,16 +377,16 @@ RandomForest <- function(df         ,
             ggtitle(plot_title) +
             theme(plot.title = element_text(size = 20, hjust = 0.5))
 
-        rf_plot_mtry  <- 
+        rf_plot_min_n  <- 
             rf_tune_results %>% 
             collect_metrics() %>% 
-            ggplot(aes(x = mtry, y = mean)) +
+            ggplot(aes(x = min_n, y = mean)) +
             geom_point() +
             geom_line() +
             facet_wrap(~.metric) +
             theme_bw()
 
-        rf_penalty_plot = gridExtra::grid.arrange(rf_plot_trees, rf_plot_mtry, nrow = 2) 
+        rf_penalty_plot = gridExtra::grid.arrange(rf_plot_trees, rf_plot_min_n, nrow = 2) 
         rf_penalty_plot # just to show the plot
         plot_path = glue::glue("pics/", forest_name ,"_random_forest_penalty_plot.svg")
         if(tosave) ggsave(plot_path, plot=rf_penalty_plot)
@@ -330,7 +398,7 @@ RandomForest <- function(df         ,
 
     { # choosing the best parameter and building the final model
         param_final  <- rf_tune_results %>% 
-            select_best(metric = "bal_accuracy")
+            select_best(metric = "roc_auc")
 
         rf_fit  <- rf_workflow %>% 
             finalize_workflow(param_final) %>% 
@@ -411,7 +479,7 @@ RandomForest <- function(df         ,
         )
     }
 
-    return(list(workflow     = rf_workflow %>% finalize_workflow(param_final),
+    return(list(workflow     = rf_workflow    ,
                 penalty_plot = rf_penalty_plot,
                 roc_plot     = rf_roc_plot    ,
                 valid_dist   = rf_val_dist    ,
@@ -494,11 +562,6 @@ SupportVectorMachine <- function(df         ,
 
 
 # Narrow Models ---------------------------------------------------------------
-set.seed(5)
-narrow_churn_split = initial_split(narrow_df, prop=0.75)
-narrow_churn_train = training(narrow_churn_split)
-narrow_churn_valid = testing (narrow_churn_split)
-narrow_churn_cv    = vfold_cv(narrow_churn_train, strata=churn, v=10)
 
 
 narrow_forest = RandomForest(narrow_df         ,
@@ -528,11 +591,6 @@ narrow_svm = SupportVectorMachine(narrow_df         ,
 )
 
 # Wide Models -----------------------------------------------------------------
-set.seed(137) # just a fine number
-wide_churn_split = initial_split(wide_df, prop=0.75)
-wide_churn_train = training(wide_churn_split)
-wide_churn_valid = testing (wide_churn_split)
-wide_churn_cv    = vfold_cv(wide_churn_train, strata=churn, v=10)
 
 
 wide_forest = RandomForest(wide_df         ,
