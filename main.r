@@ -795,7 +795,7 @@ narrow_forest$roc_plot     %>% print()
 narrow_forest$valid_dist   %>% print()
 narrow_forest$conf_mat 
 narrow_forest$metrics 
-narrow_forest$workflow  
+#narrow_forest$workflow  
 
 
 narrow_svm = SupportVectorMachine(narrow_df         ,
@@ -812,7 +812,7 @@ narrow_svm$roc_plot     %>% print()
 narrow_svm$valid_dist   %>% print()
 narrow_svm$conf_mat 
 narrow_svm$metrics 
-narrow_svm$workflow  
+#narrow_svm$workflow  
 
 # Wide Models -----------------------------------------------------------------
 
@@ -845,7 +845,7 @@ wide_svm$penalty_plot %>% print() # idk how to make it print
 wide_svm$roc_plot     %>% print()
 wide_svm$valid_dist   %>% print()
 wide_svm$conf_mat 
-wide_svm$metrics %>% select(-.estimator)
+wide_svm$metrics 
 
 # Compare Wide and Narrow SVM models -------------------------------------------
 
