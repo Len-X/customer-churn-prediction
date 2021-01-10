@@ -491,6 +491,115 @@ RandomForest <- function(df         ,
 
 }
 
+{ # to show why we will use svm_rbf over svm_poly
+
+    { # define recipe and model, and train model
+        svm_recipe <- narrow_df %>% 
+            recipe(churn ~ .)  %>% 
+            step_zv(all_predictors()) %>% 
+            step_lincomb(all_numeric())  %>% 
+            step_normalize(all_numeric())
+
+        svm_model_poly <-
+            svm_poly(cost = tune(), scale_factor = tune()) %>%
+            set_mode("classification") %>%
+            set_engine("kernlab")
+
+        svm_poly_workflow <- workflow() %>% 
+            add_recipe(svm_recipe) %>% 
+            add_model(svm_model_poly)
+
+        svm_model_rbf <-
+            svm_rbf(cost = tune(), rbf_sigma = tune()) %>%
+            set_mode("classification") %>%
+            set_engine("kernlab")
+
+        svm_rbf_workflow <- workflow() %>% 
+            add_recipe(svm_recipe) %>% 
+            add_model(svm_model_rbf)
+
+        ctrl <- control_grid(verbose = TRUE, save_pred = TRUE)
+
+        doParallel::registerDoParallel()
+
+        svm_poly_tune_results <- svm_poly_workflow %>% 
+            tune_grid(resamples = narrow_churn_cv,
+                      metrics   = metric_set(bal_accuracy, recall, roc_auc),
+                      control = ctrl
+          )
+
+        svm_rbf_tune_results <- svm_rbf_workflow %>% 
+            tune_grid(resamples = narrow_churn_cv,
+                      metrics   = metric_set(bal_accuracy, recall, roc_auc),
+                      control = ctrl
+          )
+
+    }
+
+    { # plot the penalty plot for poly method
+        svm_plot_cost  <- 
+            svm_poly_tune_results %>% 
+            collect_metrics() %>% 
+            ggplot(aes(x = cost, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            theme_bw() +
+            ggtitle("Polynomial SVM: penalty plot") +
+            theme(plot.title = element_text(size = 20, hjust = 0.5))
+
+        # bal_accuracy parameter clearly demonstrates that
+        # mtry more than 3 = floor(sqrt(9)) does not bring 
+        # a huge difference
+
+
+        svm_plot_scale  <- 
+            svm_poly_tune_results %>% 
+            collect_metrics() %>% 
+            ggplot(aes(x = scale_factor, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            theme_bw() 
+
+        svm_poly_plot = grid.arrange(svm_plot_cost, svm_plot_scale, nrow = 2)
+
+        svm_poly_plot # just to show the plot
+        if(tosave) ggsave("pics/svm_poly_penalty_plot.svg", 
+                          plot=svm_poly_plot)
+
+    }
+
+    { # plot the penalty plot for rbf method
+        svm_plot_cost  <- 
+            svm_rbf_tune_results %>% 
+            collect_metrics() %>% 
+            ggplot(aes(x = cost, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            theme_bw() +
+            ggtitle("Radial Basis Function SVM: penalty plot") +
+            theme(plot.title = element_text(size = 20, hjust = 0.5))
+
+
+        svm_plot_sigma  <- 
+            svm_rbf_tune_results %>% 
+            collect_metrics() %>% 
+            ggplot(aes(x = rbf_sigma, y = mean)) +
+            geom_point() +
+            geom_line() +
+            facet_wrap(~.metric) +
+            theme_bw() 
+
+        svm_rbf_plot = grid.arrange(svm_plot_cost, svm_plot_sigma, nrow = 2)
+
+        svm_rbf_plot # just to show the plot
+        if(tosave) ggsave("pics/svm_rbf_penalty_plot.svg", 
+                          plot=svm_rbf_plot)
+
+    }
+}
 
 SupportVectorMachine <- function(df         ,
                                  churn_split, 
